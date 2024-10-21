@@ -6,13 +6,63 @@ import torch.optim as optim
 import torch.utils.data as Data
 import json
 import time
+import os
+import argparse
+import sys
 
-start_time = time.time()
+start_time_total = time.time()
+
+class RegByMassCrossEntropy(nn.Module):
+    def __init__(self):
+        super(RegByMassCrossEntropy, self).__init__()
+        self.base_loss_fcn = nn.CrossEntropyLoss(ignore_index=0)
+    def forward(self, inputs, targets):
+        loss = self.base_loss_fcn(inputs, targets) + 1
+        #loss = -1 * (targets * torch.log(inputs) + (1 - targets) * torch.log(1 - inputs))
+        return loss.mean()
+
+parser = argparse.ArgumentParser(description="Train the TeFT")
+    
+# Define two arguments
+parser.add_argument('--collision_energy_level', type=str, required=True, help="le, me, or he")
+parser.add_argument('--loss_fcn_type', type=str, required=True, help="CrossEntropy or RegByMassCrossEntropy")
+parser.add_argument('--device', type=str, required=True, help="cpu or cuda")
+    
+# Parse the arguments
+args = parser.parse_args()
 
 # Dataset
-with open('train_dataset_norepeat.json', 'r') as f:
+print(f"{os.getcwd()}")
+
+#path_to_file = '/users/jdvillegas/repos/TeFT/Dataset/train_dataset_norepeat.json'
+
+if args.collision_energy_level != 'le' or args.collision_energy_level != 'me' or args.collision_energy_level != 'he':
+    print("Wrong energy level parameter given")
+    sys.exit()
+else:
+    path_to_file = f'/users/jdvillegas/repos/TeFT/Dataset/train_{args.energy_level}_model_teft.json'
+    path_to_precursor_file = f'/users/jdvillegas/repos/TeFT/Dataset/precursormz_{args.energy_level}_model_teft.json'
+    model_name = f"{args.energy_level}_model"
+
+if args.loss_fcn_type == "CrossEntropy":
+    criterion = nn.CrossEntropyLoss(ignore_index=0)
+elif args.loss_fcn_type == "RegByMassCrossEntropy":
+    criterion = RegByMassCrossEntropy()
+else:
+    print("Wrong loss function")
+    sys.exit()
+
+if args.device != "cuda" or args.device != "cpu":
+    print("Wrong loss function")
+    sys.exit()
+else:
+    device = args.device
+
+with open(path_to_precursor_file, 'r') as f:
+    precursors = json.load(f)
+
+with open(path_to_file, 'r') as f:
     data = json.load(f)
-device = 'cuda'
 
 # transformer epochs
 epochs = 150
@@ -44,11 +94,10 @@ d_k = d_v = 64  # dimension of K(=Q), V
 n_layers = 6  # number of Encoder of Decoder Layer
 n_heads = 8  # number of heads in Multi-Head Attention
 
-
-def make_data(sentences):
+def make_data(sentences, precursors=None):
     SS = []
     judge = 0
-    smi_inputs, mz_inputs, smi_outputs = [], [], []
+    smi_inputs, mz_inputs, smi_outputs, totalmasses = [], [], [], []
     for i in range(len(sentences)):
         mz = sentences[i]['mz']
         smiles = sentences[i]['smiles']
@@ -87,13 +136,20 @@ def make_data(sentences):
         mz_inputs.append(mz_input[0][0:100])
         smi_inputs.append(smi_input[0][0:100])
         smi_outputs.append(smi_input[0][1:101])
+
+        if precursors is not None:
+            totalmasses.append(precursors[i]["precursormz"])
         SS = []
     print(len(smi_inputs))
 
-    return torch.LongTensor(smi_inputs), torch.LongTensor(mz_inputs), torch.LongTensor(smi_outputs)
-
-
+    if precursors is None:
+        return torch.LongTensor(smi_inputs), torch.LongTensor(mz_inputs), torch.LongTensor(smi_outputs)
+    else:
+        return torch.LongTensor(smi_inputs), torch.LongTensor(mz_inputs), torch.LongTensor(smi_outputs), totalmasses
+    
+start_time_make_data = time.time()
 smi_inputs, mz_inputs, smi_outputs = make_data(data)
+print(f"Time making data: {time.time() - start_time_make_data}")
 print('data')
 
 class MyDataSet(Data.Dataset):
@@ -110,7 +166,6 @@ class MyDataSet(Data.Dataset):
 
     def __getitem__(self, idx):
         return self.enc_inputs[idx], self.dec_inputs[idx], self.dec_outputs[idx]
-
 
 loader = Data.DataLoader(MyDataSet(mz_inputs, smi_inputs, smi_outputs), 100, True)
 
@@ -326,14 +381,19 @@ class Transformer(nn.Module):
 model = Transformer().to(device)
 criterion = nn.CrossEntropyLoss(ignore_index=0)
 optimizer = optim.SGD(model.parameters(), lr=1e-3, momentum=0.99)
-print('Start!')
+print('Start training!')
 # ====================================================================================================
 for epoch in range(epochs):
     for smi_inputs, mz_inputs, smi_outputs in loader:
 
         smi_inputs, mz_inputs, smi_outputs = smi_inputs.to(device), mz_inputs.to(device), smi_outputs.to(device)
         # outputs: [batch_size * tgt_len, tgt_vocab_size]
+
+        print(f"smi_inputs type: {type(smi_inputs)}, mz_inputs type: {type(mz_inputs)}")
+        print(f"smi_inputs shape: {smi_inputs.shape}, mz_inputs shape: {mz_inputs.shape}")
+
         outputs, enc_self_attns, dec_self_attns, dec_enc_attns = model(smi_inputs, mz_inputs)
+
         loss = criterion(outputs, smi_outputs.view(-1))  # dec_outputs.view(-1):[batch_size * tgt_len * tgt_vocab_size]
         outputs = outputs.argmax(1)
         smi_outputs = smi_outputs.view(-1)
@@ -344,9 +404,8 @@ for epoch in range(epochs):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-    torch.save(model.state_dict(), './final_1.pth')
-end_time = time.time()
-usetime = (end_time-start_time)/3600
-print("Time: {:.2f} hours".format(usetime))
+    torch.save(model.state_dict(), f'./{model_name}.pth')
+
+print(f"Total time: {time.time() - start_time_total}")
 print("train end")
 
