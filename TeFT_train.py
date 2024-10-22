@@ -24,9 +24,9 @@ class RegByMassCrossEntropy(nn.Module):
 parser = argparse.ArgumentParser(description="Train the TeFT")
     
 # Define two arguments
-parser.add_argument('--collision_energy_level', type=str, required=True, help="le, me, or he")
-parser.add_argument('--loss_fcn_type', type=str, required=True, help="CrossEntropy or RegByMassCrossEntropy")
-parser.add_argument('--device', type=str, required=True, help="cpu or cuda")
+parser.add_argument('--collision_energy_level', type=str, required=True, help='le, me, or he')
+parser.add_argument('--loss_fcn_type', type=str, default='CrossEntropy', help='CrossEntropy or RegByMassCrossEntropy')
+parser.add_argument('--device', type=str, default='cuda', help="cpu or cuda")
     
 # Parse the arguments
 args = parser.parse_args()
@@ -36,27 +36,21 @@ print(f"{os.getcwd()}")
 
 #path_to_file = '/users/jdvillegas/repos/TeFT/Dataset/train_dataset_norepeat.json'
 
-if args.collision_energy_level != 'le' or args.collision_energy_level != 'me' or args.collision_energy_level != 'he':
-    print("Wrong energy level parameter given")
-    sys.exit()
-else:
-    path_to_file = f'/users/jdvillegas/repos/TeFT/Dataset/train_{args.energy_level}_model_teft.json'
-    path_to_precursor_file = f'/users/jdvillegas/repos/TeFT/Dataset/precursormz_{args.energy_level}_model_teft.json'
-    model_name = f"{args.energy_level}_model"
+print(args.collision_energy_level, type(args.collision_energy_level))
 
-if args.loss_fcn_type == "CrossEntropy":
+path_to_file = f'/users/jdvillegas/repos/TeFT_FORK_PTFI/Dataset/train_{args.collision_energy_level}_model_teft.json'
+path_to_precursor_file = f'/users/jdvillegas/repos/TeFT_FORK_PTFI/Dataset/precursormz_{args.collision_energy_level}_model_teft.json'
+model_name = f"{args.collision_energy_level}_model"
+
+if args.loss_fcn_type == 'CrossEntropy':
     criterion = nn.CrossEntropyLoss(ignore_index=0)
-elif args.loss_fcn_type == "RegByMassCrossEntropy":
+elif args.loss_fcn_type == 'RegByMassCrossEntropy':
     criterion = RegByMassCrossEntropy()
 else:
     print("Wrong loss function")
     sys.exit()
 
-if args.device != "cuda" or args.device != "cpu":
-    print("Wrong loss function")
-    sys.exit()
-else:
-    device = args.device
+device = args.device
 
 with open(path_to_precursor_file, 'r') as f:
     precursors = json.load(f)
@@ -379,7 +373,7 @@ class Transformer(nn.Module):
 
 
 model = Transformer().to(device)
-criterion = nn.CrossEntropyLoss(ignore_index=0)
+#criterion = nn.CrossEntropyLoss(ignore_index=0)
 optimizer = optim.SGD(model.parameters(), lr=1e-3, momentum=0.99)
 print('Start training!')
 # ====================================================================================================
