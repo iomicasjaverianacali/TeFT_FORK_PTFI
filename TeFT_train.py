@@ -29,6 +29,7 @@ parser.add_argument('--collision_energy_level', type=str, default="le", help='le
 parser.add_argument('--ion_mode', type=str, default='pos', help="pos or neg")
 parser.add_argument('--loss_fcn_type', type=str, default='CrossEntropy', help='CrossEntropy or RegByMassCrossEntropy')
 parser.add_argument('--device', type=str, default='cuda', help="cpu or cuda")
+parser.add_argument('--path_to_teft_folder', type=str, required=True, help="String with the path to the parent folder of TeFT_FORK_PTFI")
     
 # Parse the arguments
 args = parser.parse_args()
@@ -39,30 +40,29 @@ print(f"{os.getcwd()}")
 #path_to_file = '/users/jdvillegas/repos/TeFT/Dataset/train_dataset_norepeat.json'
 
 if args.type_model == "energylvl":
-    #path_to_file = f'/users/jdvillegas/repos/TeFT_FORK_PTFI/Dataset/train_{args.collision_energy_level}_model_teft.json'
-    path_to_precursor_file = f'/users/jdvillegas/repos/TeFT_FORK_PTFI/Dataset/precursormz_{args.collision_energy_level}_model_teft.json'
+    path_to_precursor_file = f'{args.path_to_teft_folder}/TeFT_FORK_PTFI/Dataset/precursormz_{args.collision_energy_level}_model_teft.json'
     model_name = f"{args.collision_energy_level}_model"
 
 elif args.type_model == "ionmode":
-    path_to_file = f'/home/julian/Documents/repos/TeFT_FORK_PTFI/Dataset/train_{args.ion_mode}_model_teft.json'
-    #path_to_file = f'/users/jdvillegas/repos/TeFT_FORK_PTFI/Dataset/train_{args.ion_mode}_model_teft.json'
-    path_to_precursor_file = f'/users/jdvillegas/repos/TeFT_FORK_PTFI/Dataset/precursormz_{args.ion_mode}_model_teft.json'
+    path_to_file = f'{args.path_to_teft_folder}/TeFT_FORK_PTFI/Dataset/train_{args.ion_mode}_model_teft.json'
     model_name = f"{args.ion_mode}_model"
 
 if args.loss_fcn_type == 'CrossEntropy':
     criterion = nn.CrossEntropyLoss(ignore_index=0)
 elif args.loss_fcn_type == 'RegByMassCrossEntropy':
+    if args.type_model == "energylvl":
+        path_to_precursor_file = f'{args.path_to_teft_folder}/TeFT_FORK_PTFI/Dataset/precursormz_{args.collision_energy_level}_model_teft.json'
+    elif args.type_model == "ionmode":
+        path_to_precursor_file = f'{args.path_to_teft_folder}/TeFT_FORK_PTFI/Dataset/precursormz_{args.ion_mode}_model_teft.json'
+    with open(path_to_precursor_file, 'r') as f:
+        precursors = json.load(f)
+
     criterion = RegByMassCrossEntropy()
 else:
     print("Wrong loss function")
     sys.exit()
 
 device = args.device
-
-'''
-with open(path_to_precursor_file, 'r') as f:
-    precursors = json.load(f)
-'''
 
 with open(path_to_file, 'r') as f:
     data = json.load(f)
