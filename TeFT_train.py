@@ -24,7 +24,9 @@ class RegByMassCrossEntropy(nn.Module):
 parser = argparse.ArgumentParser(description="Train the TeFT")
     
 # Define two arguments
-parser.add_argument('--collision_energy_level', type=str, required=True, help='le, me, or he')
+parser.add_argument('--type_model', type=str, required=True, help='energylvl or ionmode')
+parser.add_argument('--collision_energy_level', type=str, default="le", help='le, me, or he')
+parser.add_argument('--ion_mode', type=str, default='pos', help="pos or neg")
 parser.add_argument('--loss_fcn_type', type=str, default='CrossEntropy', help='CrossEntropy or RegByMassCrossEntropy')
 parser.add_argument('--device', type=str, default='cuda', help="cpu or cuda")
     
@@ -36,11 +38,15 @@ print(f"{os.getcwd()}")
 
 #path_to_file = '/users/jdvillegas/repos/TeFT/Dataset/train_dataset_norepeat.json'
 
-print(args.collision_energy_level, type(args.collision_energy_level))
+if args.type_model == "energylvl":
+    path_to_file = f'/users/jdvillegas/repos/TeFT_FORK_PTFI/Dataset/train_{args.collision_energy_level}_model_teft.json'
+    path_to_precursor_file = f'/users/jdvillegas/repos/TeFT_FORK_PTFI/Dataset/precursormz_{args.collision_energy_level}_model_teft.json'
+    model_name = f"{args.collision_energy_level}_model"
 
-path_to_file = f'/users/jdvillegas/repos/TeFT_FORK_PTFI/Dataset/train_{args.collision_energy_level}_model_teft.json'
-path_to_precursor_file = f'/users/jdvillegas/repos/TeFT_FORK_PTFI/Dataset/precursormz_{args.collision_energy_level}_model_teft.json'
-model_name = f"{args.collision_energy_level}_model"
+elif args.type_model == "ionmode":
+    path_to_file = f'/users/jdvillegas/repos/TeFT_FORK_PTFI/Dataset/train_{args.ion_mode}_model_teft.json'
+    path_to_precursor_file = f'/users/jdvillegas/repos/TeFT_FORK_PTFI/Dataset/precursormz_{args.ion_mode}_model_teft.json'
+    model_name = f"{args.ion_mode}_model"
 
 if args.loss_fcn_type == 'CrossEntropy':
     criterion = nn.CrossEntropyLoss(ignore_index=0)
