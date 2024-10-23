@@ -39,12 +39,13 @@ print(f"{os.getcwd()}")
 #path_to_file = '/users/jdvillegas/repos/TeFT/Dataset/train_dataset_norepeat.json'
 
 if args.type_model == "energylvl":
-    path_to_file = f'/users/jdvillegas/repos/TeFT_FORK_PTFI/Dataset/train_{args.collision_energy_level}_model_teft.json'
+    #path_to_file = f'/users/jdvillegas/repos/TeFT_FORK_PTFI/Dataset/train_{args.collision_energy_level}_model_teft.json'
     path_to_precursor_file = f'/users/jdvillegas/repos/TeFT_FORK_PTFI/Dataset/precursormz_{args.collision_energy_level}_model_teft.json'
     model_name = f"{args.collision_energy_level}_model"
 
 elif args.type_model == "ionmode":
-    path_to_file = f'/users/jdvillegas/repos/TeFT_FORK_PTFI/Dataset/train_{args.ion_mode}_model_teft.json'
+    path_to_file = f'/home/julian/Documents/repos/TeFT_FORK_PTFI/Dataset/train_{args.ion_mode}_model_teft.json'
+    #path_to_file = f'/users/jdvillegas/repos/TeFT_FORK_PTFI/Dataset/train_{args.ion_mode}_model_teft.json'
     path_to_precursor_file = f'/users/jdvillegas/repos/TeFT_FORK_PTFI/Dataset/precursormz_{args.ion_mode}_model_teft.json'
     model_name = f"{args.ion_mode}_model"
 
@@ -58,8 +59,10 @@ else:
 
 device = args.device
 
+'''
 with open(path_to_precursor_file, 'r') as f:
     precursors = json.load(f)
+'''
 
 with open(path_to_file, 'r') as f:
     data = json.load(f)
@@ -94,7 +97,9 @@ d_k = d_v = 64  # dimension of K(=Q), V
 n_layers = 6  # number of Encoder of Decoder Layer
 n_heads = 8  # number of heads in Multi-Head Attention
 
+# Join SMILES characters
 def make_data(sentences, precursors=None):
+    condition_bad_character_in_smiles = False
     SS = []
     judge = 0
     smi_inputs, mz_inputs, smi_outputs, totalmasses = [], [], [], []
@@ -105,7 +110,7 @@ def make_data(sentences, precursors=None):
         smiles = smiles.rstrip()
         mz = [float(x) for x in mz]
         mz = [int(100 * x) for x in mz]
-        if max(mz) > 50000:
+        if max(mz) >= 50000:
             continue
         for j in range(len(smiles)):
             if judge == 1:
@@ -121,7 +126,14 @@ def make_data(sentences, precursors=None):
                         SS.append('Br')
                         judge = 1
                         continue
+                if smiles[j] not in SMILES_dict:
+                    condition_bad_character_in_smiles = True
+                    break
                 SS.append(smiles[j])
+
+        if condition_bad_character_in_smiles:
+            SS=[]
+            continue
 
         SS = ['<SOS>'] + SS + ['<EOS>']
         # if len(SS)>101:
