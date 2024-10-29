@@ -12,10 +12,12 @@
             "console": "integratedTerminal",
             "args": [
                 "--collision_energy_level", "le", 
-                "--loss_fcn_type", "CrossEntropy", 
+                "--loss_fcn_type", "RegByMassCrossEntropy", 
                 "--device", "cpu",
                 "--ion_mode", "pos",
-                "--type_model", "ionmode" 
+                "--type_model", "ionmode",
+                "--path_to_teft_folder", "/home/julian/Documents/repos/",
+                "--training_filename", "train_dataset_norepeat.json"
             ]
         }
     ]

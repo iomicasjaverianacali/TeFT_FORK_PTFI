@@ -9,17 +9,79 @@ import time
 import os
 import argparse
 import sys
+from rdkit import Chem
+from rdkit.Chem import Descriptors
 
 start_time_total = time.time()
+epochs = 150
+
+SMILES_dict = [
+    '<PAD>', '<SOS>', '<EOS>',
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+    'H', 'C', 'N', 'O', 'F', 'P', 'S', 'Cl', 'Br', 'I',
+    '[', ']', '(', ')', '/', '\\', ',', '%', '+', '=', '-', '@', '#', '.',
+    'h', 'c', 'n', 'o', 'p', 's', 'i',
+]
+
+chem_alphabet = ['H', 'C', 'N', 'O', 'F', 'P', 'S', 'Cl', 'Br', 'I', 'h', 'c', 'n', 'o', 'p', 's', 'i']
+mz_dict = np.arange(0, 50000).tolist()
+
+vocab_smi = dict(zip(SMILES_dict, np.arange(0, len(SMILES_dict))))
+vocab_smi_rev = dict(zip(vocab_smi.values(), vocab_smi.keys()))
+vocab_smi_size = len(vocab_smi)
+
+vocab_mz = dict(zip(mz_dict, mz_dict))
+vocab_mz_rev = dict(zip(vocab_mz.values(), vocab_mz.keys()))
+vocab_mz_size = len(vocab_mz)
+
+def calculate_weight_from_atoms(smiles):
+    periodic_table = Chem.GetPeriodicTable()
+    weight = 0.0
+    
+    smiles_in_chem_alphabet = [i for i in smiles if i in chem_alphabet]
+
+    for atom_symbol in smiles_in_chem_alphabet:
+        if len(atom_symbol) > 1:
+            atomic_weight = periodic_table.GetAtomicWeight(atom_symbol)
+        else:
+            atomic_weight = periodic_table.GetAtomicWeight(atom_symbol.upper())
+        weight += atomic_weight
+    
+    return weight
 
 class RegByMassCrossEntropy(nn.Module):
     def __init__(self):
         super(RegByMassCrossEntropy, self).__init__()
         self.base_loss_fcn = nn.CrossEntropyLoss(ignore_index=0)
-    def forward(self, inputs, targets):
-        loss = self.base_loss_fcn(inputs, targets) + 1
-        #loss = -1 * (targets * torch.log(inputs) + (1 - targets) * torch.log(1 - inputs))
-        return loss.mean()
+    def forward(self, outputs, targets):
+        best_logits = outputs.argmax(1)
+
+        real_smi = [[vocab_smi_rev[i] for i in targets[n,:].tolist()] for n in range(targets.shape[0])]
+        real_smi = ["".join([k if k!='<EOS>'and k!='<PAD>' and k!= '<SOS>' else '' for k in i]) for i in real_smi]
+
+        pred_smi = [[vocab_smi_rev[i] for i in best_logits[n*100:(n+1)*100].tolist()] for n in range(targets.shape[0])]
+
+        #real_precursormz = [-1 if Chem.MolFromSmiles(smi_str) is None else Descriptors.ExactMolWt(Chem.MolFromSmiles(smi_str)) for smi_str in real_smi]
+        #pred_precursormz = [calculate_weight_from_atoms(smi_str) if Chem.MolFromSmiles(''.join(smi_str)) is None else Descriptors.ExactMolWt(Chem.MolFromSmiles(''.join(smi_str))) for smi_str in pred_smi]
+
+        real_precursormz = []
+        pred_precursormz = []
+
+        for k in range(len(real_smi)):
+            if Chem.MolFromSmiles(real_smi[k]) is None:
+                continue
+            else:
+                real_precursormz.append(Descriptors.ExactMolWt(Chem.MolFromSmiles(real_smi[k])))
+                if Chem.MolFromSmiles(''.join(pred_smi[k])) is None:
+                    pred_precursormz.append(calculate_weight_from_atoms(pred_smi[k]))
+                else:
+                    pred_precursormz.append(Descriptors.ExactMolWt(Chem.MolFromSmiles(''.join(pred_smi[k]))))
+        
+        precursormz_regularizer = np.mean(np.abs(np.array(pred_precursormz)-np.array(real_precursormz)))
+
+        loss = self.base_loss_fcn(outputs, targets.view(-1)) + 0.1*precursormz_regularizer
+
+        return loss
 
 parser = argparse.ArgumentParser(description="Train the TeFT")
     
@@ -50,17 +112,11 @@ if args.training_filename is None:
 else:
     path_to_file = f"{args.path_to_teft_folder}/TeFT_FORK_PTFI/Dataset/{args.training_filename}"
     aux = args.training_filename.split("train")
-    model_name = f"{aux[1]}_model"
+    #model_name = f"{aux[1]}_model"
+    model_name="loss_reg_model"
 if args.loss_fcn_type == 'CrossEntropy':
     criterion = nn.CrossEntropyLoss(ignore_index=0)
 elif args.loss_fcn_type == 'RegByMassCrossEntropy':
-    if args.type_model == "energylvl":
-        path_to_precursor_file = f'{args.path_to_teft_folder}/TeFT_FORK_PTFI/Dataset/precursormz_{args.collision_energy_level}_model_teft.json'
-    elif args.type_model == "ionmode":
-        path_to_precursor_file = f'{args.path_to_teft_folder}/TeFT_FORK_PTFI/Dataset/precursormz_{args.ion_mode}_model_teft.json'
-    with open(path_to_precursor_file, 'r') as f:
-        precursors = json.load(f)
-
     criterion = RegByMassCrossEntropy()
 else:
     print("Wrong loss function")
@@ -70,26 +126,6 @@ device = args.device
 
 with open(path_to_file, 'r') as f:
     data = json.load(f)
-
-# transformer epochs
-epochs = 150
-
-SMILES_dict = [
-    '<PAD>', '<SOS>', '<EOS>',
-    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-    'H', 'C', 'N', 'O', 'F', 'P', 'S', 'Cl', 'Br', 'I',
-    '[', ']', '(', ')', '/', '\\', ',', '%', '+', '=', '-', '@', '#', '.',
-    'h', 'c', 'n', 'o', 'p', 's', 'i',
-]
-mz_dict = np.arange(0, 50000).tolist()
-
-vocab_smi = dict(zip(SMILES_dict, np.arange(0, len(SMILES_dict))))
-vocab_smi_rev = dict(zip(vocab_smi.values(), vocab_smi.keys()))
-vocab_smi_size = len(vocab_smi)
-
-vocab_mz = dict(zip(mz_dict, mz_dict))
-vocab_mz_rev = dict(zip(vocab_mz.values(), vocab_mz.keys()))
-vocab_mz_size = len(vocab_mz)
 
 smi_len = 100  # enc_input max sequence length
 mz_len = 100  # dec_input(=dec_output) max sequence length
@@ -397,11 +433,11 @@ class Transformer(nn.Module):
         dec_logits = self.projection(dec_outputs)
         return dec_logits.view(-1, dec_logits.size(-1)), enc_self_attns, dec_self_attns, dec_enc_attns
 
-
 model = Transformer().to(device)
-#criterion = nn.CrossEntropyLoss(ignore_index=0)
 optimizer = optim.SGD(model.parameters(), lr=1e-3, momentum=0.99)
 print('Start training!')
+
+save_loss = []
 # ====================================================================================================
 for epoch in range(epochs):
     for smi_inputs, mz_inputs, smi_outputs in loader:
@@ -414,8 +450,10 @@ for epoch in range(epochs):
 
         outputs, enc_self_attns, dec_self_attns, dec_enc_attns = model(smi_inputs, mz_inputs)
 
-        loss = criterion(outputs, smi_outputs.view(-1))  # dec_outputs.view(-1):[batch_size * tgt_len * tgt_vocab_size]
+        #loss = criterion(outputs, smi_outputs.view(-1))  # dec_outputs.view(-1):[batch_size * tgt_len * tgt_vocab_size]
+        loss = criterion(outputs, smi_outputs)  # dec_outputs.view(-1):[batch_size * tgt_len * tgt_vocab_size]
         outputs = outputs.argmax(1)
+
         smi_outputs = smi_outputs.view(-1)
         correct = (outputs == smi_outputs).sum().item()  # dec_outputs.view(-1):[batch_size * tgt_len * tgt_vocab_size]
         accuracy = correct / len(outputs)
