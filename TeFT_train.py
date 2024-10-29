@@ -79,9 +79,9 @@ class RegByMassCrossEntropy(nn.Module):
         
         precursormz_regularizer = np.mean(np.abs(np.array(pred_precursormz)-np.array(real_precursormz)))
 
-        loss = self.base_loss_fcn(outputs, targets.view(-1)) + 0.1*precursormz_regularizer
+        loss = self.base_loss_fcn(outputs, targets.view(-1))
 
-        return loss
+        return loss, precursormz_regularizer
 
 parser = argparse.ArgumentParser(description="Train the TeFT")
     
@@ -437,33 +437,36 @@ model = Transformer().to(device)
 optimizer = optim.SGD(model.parameters(), lr=1e-3, momentum=0.99)
 print('Start training!')
 
-save_loss = []
+losses_ce = []
+losses_reg = []
 # ====================================================================================================
 for epoch in range(epochs):
     for smi_inputs, mz_inputs, smi_outputs in loader:
 
         smi_inputs, mz_inputs, smi_outputs = smi_inputs.to(device), mz_inputs.to(device), smi_outputs.to(device)
         # outputs: [batch_size * tgt_len, tgt_vocab_size]
-
-        print(f"smi_inputs type: {type(smi_inputs)}, mz_inputs type: {type(mz_inputs)}")
-        print(f"smi_inputs shape: {smi_inputs.shape}, mz_inputs shape: {mz_inputs.shape}")
-
         outputs, enc_self_attns, dec_self_attns, dec_enc_attns = model(smi_inputs, mz_inputs)
 
         #loss = criterion(outputs, smi_outputs.view(-1))  # dec_outputs.view(-1):[batch_size * tgt_len * tgt_vocab_size]
-        loss = criterion(outputs, smi_outputs)  # dec_outputs.view(-1):[batch_size * tgt_len * tgt_vocab_size]
+        loss_ce, loss_reg = criterion(outputs, smi_outputs)  # dec_outputs.view(-1):[batch_size * tgt_len * tgt_vocab_size]
+        loss = loss_ce + 0.01*loss_reg
+
         outputs = outputs.argmax(1)
 
         smi_outputs = smi_outputs.view(-1)
         correct = (outputs == smi_outputs).sum().item()  # dec_outputs.view(-1):[batch_size * tgt_len * tgt_vocab_size]
         accuracy = correct / len(outputs)
-        print('Epoch:', '%04d' % (epoch + 1), 'loss =', '{:.6f}'.format(loss), 'accuracy =''{:.6f}'.format(accuracy))
-        Loss = '{:.6f}'.format(loss)
+
+        if epoch % 10 == 0:
+            losses_ce.append(losses_ce)
+            losses_reg.append(losses_reg)
+            print(f"Epoch: {epoch+1}, TotalLoss: {loss}, CELoss:{loss_ce}, RegLoss:{loss_reg}, Accuracy: {accuracy}")
+        
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
     torch.save(model.state_dict(), f'./{model_name}.pth')
 
 print(f"Total time: {time.time() - start_time_total}")
-print("train end")
+print("training end")
 
